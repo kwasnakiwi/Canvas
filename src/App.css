@@ -1,0 +1,51 @@
+body{
+  margin: 0;
+  overflow: hidden;
+}
+.shape-select{
+  position: fixed;       
+  bottom: 50px;          
+  left: 50%;
+  transform: translateX(-50%); 
+  display: flex;
+  gap: 10px;    
+  background-color: rgb(216, 216, 216);        
+  padding: 15px 20px;
+  border-radius: 20px;
+  box-shadow: 5px 5px 5px 0 rgb(104, 104, 104);
+}
+#circle-btn{
+  background-color: red;
+  width: 40px;
+  height: 40px;
+  border-radius: 25px;
+}
+#rect-btn{
+  background-color: blue;
+  width: 80px;
+  height: 40px;
+}
+#square-btn{
+  background-color: rgb(62, 170, 62);
+  width: 40px;
+  height: 40px;
+}
+.shape-select button{
+  background-color: transparent;
+  border: none;
+  cursor: pointer;
+}
+button.active div{
+  border: 3px solid black;
+}
+#delete-btn.active{
+  border: 3px solid black;
+}
+button div{
+  box-shadow: 3px 3px 5px 0 rgb(104, 104, 104);
+}
+#delete-btn{
+  font-size: 30px;
+  padding: 0;
+  border-radius: 20px;
+}
