@@ -665,7 +665,9 @@ if (showColorPicker && selectedIndex != null) {
           }}
           className={shape === 'square' ? 'active' : ''}
         >
-          <div id="square-btn" />
+          <div id="square-btn"
+            className={shape === 'square' ? 'active-shape' : ''}>
+          </div>
         </button>
         <button
           onClick={() => {
@@ -675,18 +677,21 @@ if (showColorPicker && selectedIndex != null) {
           }}
           className={shape === 'rect' ? 'active' : ''}
         >
-          <div id="rect-btn" />
+          <div id="rect-btn"
+            className={shape === 'rect' ? 'active-shape' : ''}>
+          </div>
         </button>
-        <button
-          onClick={() => {
-            setShape('circle');
-            setIsDeleting(false);
-            setSelectedIndex(null);
-          }}
-          className={shape === 'circle' ? 'active' : ''}
+       <button onClick={() => {
+        setShape('circle');
+      setIsDeleting(false);
+            setSelectedIndex(null);}}
         >
-          <div id="circle-btn" />
-        </button>
+  <div
+    id="circle-btn"
+    className={shape === 'circle' ? 'active-shape' : ''}
+  />
+</button>
+
         <button
           id="delete-btn"
           onClick={() => {
@@ -702,37 +707,52 @@ if (showColorPicker && selectedIndex != null) {
     <canvas ref={canvasRef} />
 
     {showColorPicker && selectedIndex != null && (
-      <div className="color-panel" style={panelStyle}>
-        <h3>Wybierz kolor:</h3>
-        <div className="color-picker-input">
-          <input
-            type="color"
-            value={pickerColor}
-            onChange={e => {
-  setPickerColor(e.target.value);
-  setPreviewColor(e.target.value);
-}}
-          />
-        </div>
-        <div className="preset-colors">
-          {BASIC_COLORS.map(c => (
-            <button
-              key={c}
-              className={`swatch${pickerColor === c ? ' selected' : ''}`}
-              style={{ backgroundColor: c }}
-              onClick={() => {
-  setPickerColor(c);
-  setPreviewColor(c);
-}}
-            />
-          ))}
-        </div>
-        <div className="actions">
-          <button onClick={saveColor} id='save'>Save</button>
-          <button onClick={cancelColor} id='cancel'>Cancel</button>
-        </div>
-      </div>
-    )}
+  <div className="color-panel" style={panelStyle}>
+    <h3>Wybierz kolor:</h3>
+    <div className="color-picker-input">
+      <input
+        type="color"
+        value={pickerColor}
+        onChange={e => {
+          const c = e.target.value;
+          setPickerColor(e.target.value);
+          setPreviewColor(e.target.value);
+          setShapes(prev => {
+            const upd = [...prev];
+            const s = upd[selectedIndex];
+            s.color = c;
+            s.borderColor = darkenColor(c, 0.2);
+            return upd;
+          });
+        }}
+      />
+    </div>
+    <div className="preset-colors">
+      {BASIC_COLORS.map(c => (
+        <button
+          key={c}
+          className={`swatch${pickerColor === c ? ' selected' : ''}`}
+          style={{ backgroundColor: c }}
+          onClick={() => {
+            setPickerColor(c);
+            setPreviewColor(c);
+            setShapes(prev => {
+              const upd = [...prev];
+              const s = upd[selectedIndex];
+              s.color = c;
+              s.borderColor = darkenColor(c, 0.2);
+              return upd;
+            });
+          }}
+        />
+      ))}
+    </div>
+    <div className="actions">
+      <button onClick={cancelColor} id="cancel">Anuluj</button>
+    </div>
+  </div>
+)}
+
   </div>
 
     </>

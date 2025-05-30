@@ -131,3 +131,11 @@ button div{
   color: rgb(243, 48, 48);
   border-radius: 5px;
 }
+/* highlight wybranego kształtu */
+.shape-select .active-shape {
+  /* troszkę powiększymy i zmienimy obramowanie */
+  transform: scale(1.15);
+  border-color: #ffffff;        /* biały akcent */
+  box-shadow: 0 0 0 3px #ffffff; /* wyraźna otoczka */
+  transition: transform 0.1s ease-in-out, box-shadow 0.1s;
+}
