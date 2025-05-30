@@ -34,17 +34,21 @@ const getSnapDelta = (...edges) => {
    Klasy figur (koło, prostokąt, kwadrat)
    ========================================================================= */
 class Circle {
-  constructor(x, y, radius, color) {
+  constructor(x, y, radius, color, borderColor) {
     this.x = x;
     this.y = y;
     this.radius = radius;
     this.color = color;
+    this.borderColor = borderColor;
   }
   draw(ctx) {
     ctx.beginPath();
     ctx.fillStyle = this.color;
     ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
     ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = this.borderColor;
+    ctx.stroke();
     ctx.closePath();
   }
   contains(px, py) {
@@ -55,15 +59,19 @@ class Circle {
 }
 
 class Rect {
-  constructor(x, y, width, height, color) {
+  constructor(x, y, width, height, color, borderColor) {
     this.x = x;
     this.y = y;
     this.width = width;
     this.height = height;
     this.color = color;
+    this.borderColor = borderColor;
   }
   draw(ctx) {
     ctx.fillStyle = this.color;
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = this.borderColor;
+    ctx.strokeRect(this.x - this.width / 2, this.y - this.height / 2, this.width, this.height);
     ctx.fillRect(
       this.x - this.width / 2,
       this.y - this.height / 2,
@@ -82,10 +90,35 @@ class Rect {
 }
 
 class Square extends Rect {
-  constructor(x, y, size, color) {
-    super(x, y, size, size, color);
+  constructor(x, y, size, color, borderColor) {
+    super(x, y, size, size, color, borderColor);
   }
 }
+// zamiast dotychczasowych BASIC_COLORS:
+const BASIC_COLORS = [
+  "#ff0000", // czerwony
+  "#00ff00", // zielony
+  "#0000ff", // niebieski
+  "#ffff00", // żółty
+  "#ff00ff", // purpurowy (magenta)
+  "#00ffff", // cyjan
+  "#000000", // czarny
+  "#ffffff", // biały
+  "#808080", // szary
+];
+
+// Funkcja do przyciemniania koloru o podany procent (0–1)
+const darkenColor = (hex, amount) => {
+  const c = hex.replace('#','');
+  let num = parseInt(c,16);
+  let r = (num >> 16) & 0xff;
+  let g = (num >> 8) & 0xff;
+  let b = num & 0xff;
+  r = Math.floor(r * (1 - amount));
+  g = Math.floor(g * (1 - amount));
+  b = Math.floor(b * (1 - amount));
+  return '#' + [r,g,b].map(x => x.toString(16).padStart(2,'0')).join('');
+};
 
 /* =========================================================================
    Główna aplikacja React
@@ -106,6 +139,27 @@ export default function App() {
   const initialRef = useRef(null);
   const [isPanning, setIsPanning] = useState(false);
   const [lastPan, setLastPan] = useState({ x: 0, y: 0 });
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [pickerColor, setPickerColor] = useState(BASIC_COLORS[0]);
+  // —————————————————————————————————————————————
+// 1) Handlery panelu kolorów (add po wszystkich useState)
+const saveColor = () => {
+  if (selectedIndex == null) return;
+  setShapes(prev => {
+    const upd = [...prev];
+    const s = upd[selectedIndex];
+    s.color = pickerColor;
+    s.borderColor = darkenColor(pickerColor, 0.2);
+    return upd;
+  });
+  setShowColorPicker(false);
+};
+
+const cancelColor = () => {
+  setShowColorPicker(false);
+};
+// —————————————————————————————————————————————
+
 
   /* ---------------------------------------------------------------------
      useEffect – cała logika rysowania + event‑handlery
@@ -200,88 +254,108 @@ export default function App() {
     /* ------------------------------------------------------------------
        Pomocniczy hit‑test → indeks figury pod kursorem lub −1
        ------------------------------------------------------------------ */
-    const hitTest = (mx, my) =>
-      shapes.findIndex(o =>
-        o.contains((mx - viewOffset.x) / scale, (my - viewOffset.y) / scale)
-      );
+   const hitTest = (mx, my) => {
+  const wx = (mx - viewOffset.x) / scale;
+  const wy = (my - viewOffset.y) / scale;
+
+  return shapes.findLastIndex(s => s.contains(wx, wy));
+};
+
 
     /* ------------------------------------------------------------------
        MOUSE‑DOWN  (start panning / resize / drag)
        ------------------------------------------------------------------ */
-    /* ------------------------------------------------------------------
-   MOUSE-DOWN  ─  kolejność: HANDLE → FIGURA → PANNING
-   ------------------------------------------------------------------ */
-const onMouseDown = e => {
-  if (e.button !== 0) return;                    // tylko LPM
+// MOUSE-DOWN  (start panning / resize / drag)
+// obsługuje wyłącznie lewy przycisk
+// MOUSE-DOWN  (start panning / resize / drag)
+// → obsługuje WYŁĄCZNIE lewy przycisk (button 0)
+// Wewnątrz Twojego useEffect, lub tam gdzie rejestrujesz listener’y:
 
+// 1️⃣ – funkcja onMouseDown
+// … w useEffect, zamiast dotychczasowego onMouseDown:
+const onMouseDown = e => {
   const rect    = canvas.getBoundingClientRect();
   const screenX = e.clientX - rect.left;
   const screenY = e.clientY - rect.top;
   const worldX  = (screenX - viewOffset.x) / scale;
   const worldY  = (screenY - viewOffset.y) / scale;
 
-  /* 1️⃣ — klik w uchwyt resize? */
-  if (selectedIndex != null) {
-    const s  = shapes[selectedIndex];
-    const hs = 12;
-    const handles = s instanceof Circle
-      ? {
-          tl: [s.x - s.radius,     s.y - s.radius],
-          tr: [s.x + s.radius,     s.y - s.radius],
-          bl: [s.x - s.radius,     s.y + s.radius],
-          br: [s.x + s.radius,     s.y + s.radius],
-        }
-      : {
-          tl: [s.x - s.width / 2,  s.y - s.height / 2],
-          tr: [s.x + s.width / 2,  s.y - s.height / 2],
-          bl: [s.x - s.width / 2,  s.y + s.height / 2],
-          br: [s.x + s.width / 2,  s.y + s.height / 2],
-        };
-
-    for (let key in handles) {
-      const [hx, hy] = handles[key];
-      const sx = hx * scale + viewOffset.x;
-      const sy = hy * scale + viewOffset.y;
-
-      if (
-        screenX >= sx - hs / 2 && screenX <= sx + hs / 2 &&
-        screenY >= sy - hs / 2 && screenY <= sy + hs / 2
-      ) {
-        // --- start resize ---
-        setIsResizing(true);
-        setResizingCorner(key);
-        initialRef.current = {
-          x: worldX,
-          y: worldY,
-          shape: JSON.parse(JSON.stringify(s)),
-        };
-        return;                                   // ⬅️ nic więcej
-      }
-    }
+  // ── PRAWY KLIK ── select/deselect + otwórz panel
+  if (e.button === 2) {
+    e.preventDefault();
+    const idx = hitTest(screenX, screenY);
+    setSelectedIndex(idx !== -1 ? idx : null);
+    setShowColorPicker(idx !== -1);
+    setIsResizing(false);
+    return;
   }
 
-  /* 2️⃣ — klik w figurę?  →  DRAG */
-  const idx = hitTest(screenX, screenY);
-  if (idx !== -1) {
+  // ── LEWY KLIK ── drag / resize / pan (bez zmiany `selectedIndex`)
+  if (e.button !== 0) return;  // ignoruj inne przyciski
+
+  // jeśli klik w uchwyt → start resize
+  if (selectedIndex != null && startResizeIfHitHandle(screenX, screenY, worldX, worldY)) {
+    return;
+  }
+
+  // jeśli klik w kształt → drag
+  const idx2 = hitTest(screenX, screenY);
+  if (idx2 !== -1) {
     if (isDeleting) {
-      setShapes(prev => prev.filter((_, i) => i !== idx));
+      setShapes(prev => prev.filter((_, i) => i !== idx2));
       setSelectedIndex(null);
+      setShowColorPicker(false);
       return;
     }
-    const picked = shapes[idx];
-    const rest   = shapes.filter((_, i) => i !== idx);
-    setShapes([...rest, picked]);
-    setDraggedIndex(rest.length);
-    setOffset({ x: worldX - picked.x, y: worldY - picked.y });
-    setSelectedIndex(rest.length);
-    return;                                       // ⬅️ nie panninguj
+    setDraggedIndex(idx2);
+    setOffset({ x: worldX - shapes[idx2].x, y: worldY - shapes[idx2].y });
+    setShowColorPicker(false);
+    return;
   }
 
-  /* 3️⃣ — tło → PANNING */
+  // klik na tło → deselect + pan
+  setSelectedIndex(null);
+  setShowColorPicker(false);
   setIsPanning(true);
   setLastPan({ x: e.clientX, y: e.clientY });
-  setSelectedIndex(null);
 };
+
+// … w tej samej przestrzeni, pomocniczo:
+function startResizeIfHitHandle(screenX, screenY, worldX, worldY) {
+  const s  = shapes[selectedIndex];
+  const hs = 12;
+  const handles = s instanceof Circle
+    ? { tl: [s.x - s.radius, s.y - s.radius], tr: [s.x + s.radius, s.y - s.radius],
+        bl: [s.x - s.radius, s.y + s.radius], br: [s.x + s.radius, s.y + s.radius] }
+    : { tl: [s.x - s.width/2, s.y - s.height/2], tr: [s.x + s.width/2, s.y - s.height/2],
+        bl: [s.x - s.width/2, s.y + s.height/2], br: [s.x + s.width/2, s.y + s.height/2] };
+
+  for (let key in handles) {
+    const [hx, hy] = handles[key];
+    const sx = hx * scale + viewOffset.x;
+    const sy = hy * scale + viewOffset.y;
+    if (
+      screenX >= sx - hs/2 && screenX <= sx + hs/2 &&
+      screenY >= sy - hs/2 && screenY <= sy + hs/2
+    ) {
+      setIsResizing(true);
+      setResizingCorner(key);
+      initialRef.current = {
+        x: worldX,
+        y: worldY,
+        shape: JSON.parse(JSON.stringify(s)),
+      };
+      return true;
+    }
+  }
+  return false;
+}
+
+// I pamiętaj przy rejestracji:
+canvas.addEventListener('mousedown', onMouseDown);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+
 
 
     /* ------------------------------------------------------------------
@@ -426,15 +500,19 @@ const onMouseDown = e => {
     /* ------------------------------------------------------------------
        Dodatkowe eventy (contextmenu, scroll‑zoom, dblclick, klawisze)
        ------------------------------------------------------------------ */
-    const onContext = e => {
-      e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      const idx = hitTest(x, y);
-      setSelectedIndex(idx !== -1 ? idx : null);
-      setIsResizing(false);
-    };
+    // CONTEXTMENU  (tylko prawe — zaznaczanie/deselekcja)
+// CONTEXTMENU  (tylko prawy przycisk – zaznaczanie/deselekcja)
+const onContext = e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const screenX = e.clientX - rect.left;
+  const screenY = e.clientY - rect.top;
+  const idx = hitTest(screenX, screenY);
+  setSelectedIndex(idx !== -1 ? idx : null);
+  setIsResizing(false);
+};
+
+
 
     const onWheel = e => {
       if (!e.ctrlKey) return;
@@ -464,9 +542,9 @@ const onMouseDown = e => {
       const x = (e.clientX - rect.left - viewOffset.x) / scale;
       const y = (e.clientY - rect.top - viewOffset.y) / scale;
       let n = null;
-      if (shape === 'circle') n = new Circle(x, y, 50, 'red');
-      if (shape === 'rect') n = new Rect(x, y, 200, 100, 'blue');
-      if (shape === 'square') n = new Square(x, y, 100, 'green');
+      if (shape === 'circle') n = new Circle(x, y, 50, "#e0e0e0", "#9e9e9e");
+      if (shape === 'rect') n = new Rect(x, y, 200, 100, "#e0e0e0", "#9e9e9e");
+      if (shape === 'square') n = new Square(x, y, 100, "#e0e0e0", "#9e9e9e");
       if (n) {
         setShapes(prev => {
           const u = [...prev, n];
@@ -524,11 +602,26 @@ const onMouseDown = e => {
     scale,
     isPanning,
     lastPan,
+    showColorPicker,
+    pickerColor
   ]);
 
   /* ---------------------------------------------------------------------
      JSX – przyciski + canvas
      --------------------------------------------------------------------- */
+// w górze App(), przed return:
+let panelStyle = {};
+if (showColorPicker && selectedIndex != null) {
+  const s = shapes[selectedIndex];
+  const screenX = s.x * scale + viewOffset.x;
+  const screenY = s.y * scale + viewOffset.y;
+  panelStyle = {
+    position: 'absolute',
+    left: `${screenX + 10}px`,
+    top:  `${screenY + 10}px`,
+  };
+}
+
   return (
     <>
       <div className="shape-select">
@@ -572,18 +665,38 @@ const onMouseDown = e => {
         >
           🗑️
         </button>
-        <button
-          id="delete-btn"
-          onClick={() => {
-            setShapes([]);
-            setSelectedIndex(null);
-            setIsResizing(false);
-          }}
-        >
-          🗑️All
-        </button>
       </div>
-      <canvas ref={canvasRef} />
+      <div className="canvas-container">
+    <canvas ref={canvasRef} />
+
+    {showColorPicker && selectedIndex != null && (
+      <div className="color-panel" style={panelStyle}>
+        <h3>Wybierz kolor:</h3>
+        <div className="color-picker-input">
+          <input
+            type="color"
+            value={pickerColor}
+            onChange={e => setPickerColor(e.target.value)}
+          />
+        </div>
+        <div className="preset-colors">
+          {BASIC_COLORS.map(c => (
+            <button
+              key={c}
+              className={`swatch${pickerColor === c ? ' selected' : ''}`}
+              style={{ backgroundColor: c }}
+              onClick={() => setPickerColor(c)}
+            />
+          ))}
+        </div>
+        <div className="actions">
+          <button onClick={saveColor} id='save'>Save</button>
+          <button onClick={cancelColor} id='cancel'>Cancel</button>
+        </div>
+      </div>
+    )}
+  </div>
+
     </>
   );
 }

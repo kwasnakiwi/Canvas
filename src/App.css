@@ -2,6 +2,7 @@ body{
   margin: 0;
   overflow: hidden;
 }
+/* "#e0e0e0", "#9e9e9e" */
 .shape-select{
   position: fixed;       
   bottom: 50px;          
@@ -9,33 +10,39 @@ body{
   transform: translateX(-50%); 
   display: flex;
   gap: 10px;    
-  background-color: rgb(216, 216, 216);        
+  background-color: rgb(70, 70, 70);        
   padding: 15px 20px;
   border-radius: 20px;
   box-shadow: 5px 5px 5px 0 rgb(104, 104, 104);
 }
 #circle-btn{
-  background-color: red;
+  background-color: #e0e0e0;
+  border: 4px solid #9e9e9e;
   width: 40px;
   height: 40px;
   border-radius: 25px;
+  margin: 4px;
 }
 #rect-btn{
-  background-color: blue;
+  background-color: #e0e0e0;
+  border: 4px solid #9e9e9e;
   width: 80px;
   height: 40px;
+  margin: 4px;
 }
 #square-btn{
-  background-color: rgb(62, 170, 62);
+  background-color: #e0e0e0;
+  border: 4px solid #9e9e9e;
   width: 40px;
   height: 40px;
+  margin: 4px;
 }
 .shape-select button{
   background-color: transparent;
   border: none;
   cursor: pointer;
 }
-button.active div{
+#circle-btn.active div{
   border: 3px solid black;
 }
 #delete-btn.active{
@@ -48,4 +55,79 @@ button div{
   font-size: 30px;
   padding: 0;
   border-radius: 20px;
+}
+.color-panel {
+  position: absolute;      /* Pozycja będzie ustawiana inline style’em */
+  background: #f5f5f5;
+  padding: 8px 12px;
+  border: 2px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
+  z-index: 1000;
+}
+
+.color-panel h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-family: poppins;
+}
+
+.color-picker-input {
+  margin-bottom: 8px;
+}
+
+.color-picker-input input[type="color"] {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.preset-colors {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.swatch {
+  width: 24px;
+  height: 24px;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.swatch.selected {
+  border-color: #333;
+}
+
+.actions {
+  text-align: right;
+}
+
+.actions button {
+  margin-left: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#save, #cancel{
+  border: 3px solid;
+  font-family: Tinos;
+  font-size: 20px;
+  font-weight: bold;
+  padding: 0 15px;
+}
+#save{
+  background-color: rgb(13, 192, 13);
+  color: rgb(18, 65, 18);
+  border-radius: 5px;
+}
+#cancel{
+  background-color: rgb(153, 43, 43);
+  color: rgb(243, 48, 48);
+  border-radius: 5px;
 }
