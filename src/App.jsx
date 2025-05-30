@@ -141,6 +141,8 @@ export default function App() {
   const [lastPan, setLastPan] = useState({ x: 0, y: 0 });
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [pickerColor, setPickerColor] = useState(BASIC_COLORS[0]);
+  const [previewColor, setPreviewColor] = useState(null);
+
   // —————————————————————————————————————————————
 // 1) Handlery panelu kolorów (add po wszystkich useState)
 const saveColor = () => {
@@ -148,15 +150,18 @@ const saveColor = () => {
   setShapes(prev => {
     const upd = [...prev];
     const s = upd[selectedIndex];
-    s.color = pickerColor;
-    s.borderColor = darkenColor(pickerColor, 0.2);
+    s.color = previewColor;
+    s.borderColor = darkenColor(previewColor, 0.2);
     return upd;
   });
   setShowColorPicker(false);
+  setPreviewColor(null);
 };
+
 
 const cancelColor = () => {
   setShowColorPicker(false);
+  setPreviewColor(null);
 };
 // —————————————————————————————————————————————
 
@@ -176,77 +181,98 @@ const cancelColor = () => {
     /* ----------------------------------------
        Funkcja rysująca (siatka + figury)
        ---------------------------------------- */
-    const drawAll = () => {
-      ctx.setTransform(scale, 0, 0, scale, viewOffset.x, viewOffset.y);
-      ctx.clearRect(
-        -viewOffset.x / scale,
-        -viewOffset.y / scale,
-        canvas.width / scale,
-        canvas.height / scale
-      );
+    // Wewnątrz useEffect, zastąp dotychczasową drawAll() poniższą:
 
-      /* -- siatka -- */
-      const worldLeft = -viewOffset.x / scale;
-      const worldTop = -viewOffset.y / scale;
-      const worldRight = (canvas.width - viewOffset.x) / scale;
-      const worldBottom = (canvas.height - viewOffset.y) / scale;
+const drawAll = () => {
+  // 1. Transformacja i czyszczenie
+  ctx.setTransform(scale, 0, 0, scale, viewOffset.x, viewOffset.y);
+  ctx.clearRect(
+    -viewOffset.x / scale,
+    -viewOffset.y / scale,
+    canvas.width / scale,
+    canvas.height / scale
+  );
 
-      ctx.strokeStyle = '#000';
-      ctx.lineWidth = 0.5;
+  // 2. Rysowanie siatki
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 0.5;
 
-      for (
-        let x = Math.floor(worldLeft / GRID_SIZE) * GRID_SIZE;
-        x < worldRight;
-        x += GRID_SIZE
-      ) {
-        ctx.beginPath();
-        ctx.moveTo(x, worldTop);
-        ctx.lineTo(x, worldBottom);
-        ctx.stroke();
-      }
-      for (
-        let y = Math.floor(worldTop / GRID_SIZE) * GRID_SIZE;
-        y < worldBottom;
-        y += GRID_SIZE
-      ) {
-        ctx.beginPath();
-        ctx.moveTo(worldLeft, y);
-        ctx.lineTo(worldRight, y);
-        ctx.stroke();
-      }
+  const worldLeft   = -viewOffset.x / scale;
+  const worldTop    = -viewOffset.y / scale;
+  const worldRight  = (canvas.width  - viewOffset.x) / scale;
+  const worldBottom = (canvas.height - viewOffset.y) / scale;
 
-      /* -- figury + uchwyty wyboru -- */
-      shapes.forEach((s, i) => {
-        s.draw(ctx);
+  for (let x = Math.floor(worldLeft / GRID_SIZE) * GRID_SIZE; x < worldRight; x += GRID_SIZE) {
+    ctx.beginPath();
+    ctx.moveTo(x, worldTop);
+    ctx.lineTo(x, worldBottom);
+    ctx.stroke();
+  }
+  for (let y = Math.floor(worldTop / GRID_SIZE) * GRID_SIZE; y < worldBottom; y += GRID_SIZE) {
+    ctx.beginPath();
+    ctx.moveTo(worldLeft, y);
+    ctx.lineTo(worldRight, y);
+    ctx.stroke();
+  }
 
-        if (i === selectedIndex) {
-          const hs = 12; // wielkość uchwytu
-          const handles = s instanceof Circle
-            ? {
-                tl: [s.x - s.radius, s.y - s.radius],
-                tr: [s.x + s.radius, s.y - s.radius],
-                bl: [s.x - s.radius, s.y + s.radius],
-                br: [s.x + s.radius, s.y + s.radius],
-              }
-            : {
-                tl: [s.x - s.width / 2, s.y - s.height / 2],
-                tr: [s.x + s.width / 2, s.y - s.height / 2],
-                bl: [s.x - s.width / 2, s.y + s.height / 2],
-                br: [s.x + s.width / 2, s.y + s.height / 2],
-              };
+  // 3. Rysowanie figur z podglądem koloru
+  shapes.forEach((s, i) => {
+    // dobór kolorów: jeśli panel otwarty i to zaznaczony kształt → podgląd
+    const usePreview = showColorPicker && i === selectedIndex;
+    const fillColor   = usePreview ? previewColor : s.color;
+    const strokeColor = usePreview ? darkenColor(previewColor, 0.2) : s.borderColor;
 
-          ctx.save();
-          ctx.setTransform(1, 0, 0, 1, 0, 0); // reset do współrzędnych ekranu
-          ctx.fillStyle = 'black';
-          Object.values(handles).forEach(([hx, hy]) => {
-            const sx = hx * scale + viewOffset.x;
-            const sy = hy * scale + viewOffset.y;
-            ctx.fillRect(sx - hs / 2, sy - hs / 2, hs, hs);
-          });
-          ctx.restore();
-        }
+    // rysowanie kształtu
+    if (s instanceof Circle) {
+      ctx.beginPath();
+      ctx.fillStyle   = fillColor;
+      ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth   = 4;
+      ctx.strokeStyle = strokeColor;
+      ctx.stroke();
+      ctx.closePath();
+    } else {
+      ctx.fillStyle   = fillColor;
+      ctx.lineWidth   = 8;
+      ctx.strokeStyle = strokeColor;
+      ctx.strokeRect(s.x - s.width/2, s.y - s.height/2, s.width, s.height);
+      ctx.fillRect(  s.x - s.width/2, s.y - s.height/2, s.width, s.height);
+    }
+
+    // 4. Rysowanie uchwytów dla zaznaczonego
+    if (i === selectedIndex) {
+      const hs = 12;
+      const handles = s instanceof Circle
+        ? {
+            tl: [s.x - s.radius, s.y - s.radius],
+            tr: [s.x + s.radius, s.y - s.radius],
+            bl: [s.x - s.radius, s.y + s.radius],
+            br: [s.x + s.radius, s.y + s.radius],
+          }
+        : {
+            tl: [s.x - s.width/2,  s.y - s.height/2],
+            tr: [s.x + s.width/2,  s.y - s.height/2],
+            bl: [s.x - s.width/2,  s.y + s.height/2],
+            br: [s.x + s.width/2,  s.y + s.height/2],
+          };
+
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = 'black';
+      Object.values(handles).forEach(([hx, hy]) => {
+        const sx = hx * scale + viewOffset.x;
+        const sy = hy * scale + viewOffset.y;
+        ctx.fillRect(sx - hs/2, sy - hs/2, hs, hs);
       });
-    };
+      ctx.restore();
+    }
+  });
+};
+
+// Nie zapomnij wywoływać drawAll() w odpowiednich momentach,
+// np. bezpośrednio po każdej zmianie stanów w useEffect.
+
 
     /* inicjalne rysowanie */
     drawAll();
@@ -281,14 +307,20 @@ const onMouseDown = e => {
   const worldY  = (screenY - viewOffset.y) / scale;
 
   // ── PRAWY KLIK ── select/deselect + otwórz panel
-  if (e.button === 2) {
-    e.preventDefault();
-    const idx = hitTest(screenX, screenY);
-    setSelectedIndex(idx !== -1 ? idx : null);
-    setShowColorPicker(idx !== -1);
-    setIsResizing(false);
-    return;
+if (e.button === 2) {
+  e.preventDefault();
+  const idx = hitTest(screenX, screenY);
+  setSelectedIndex(idx !== -1 ? idx : null);
+  setShowColorPicker(idx !== -1);
+  setIsResizing(false);
+  if (idx !== -1) {
+    // startujemy podgląd od aktualnego koloru figury
+    setPickerColor(shapes[idx].color);
+    setPreviewColor(shapes[idx].color);
   }
+  return;
+}
+
 
   // ── LEWY KLIK ── drag / resize / pan (bez zmiany `selectedIndex`)
   if (e.button !== 0) return;  // ignoruj inne przyciski
@@ -676,7 +708,10 @@ if (showColorPicker && selectedIndex != null) {
           <input
             type="color"
             value={pickerColor}
-            onChange={e => setPickerColor(e.target.value)}
+            onChange={e => {
+  setPickerColor(e.target.value);
+  setPreviewColor(e.target.value);
+}}
           />
         </div>
         <div className="preset-colors">
@@ -685,7 +720,10 @@ if (showColorPicker && selectedIndex != null) {
               key={c}
               className={`swatch${pickerColor === c ? ' selected' : ''}`}
               style={{ backgroundColor: c }}
-              onClick={() => setPickerColor(c)}
+              onClick={() => {
+  setPickerColor(c);
+  setPreviewColor(c);
+}}
             />
           ))}
         </div>
