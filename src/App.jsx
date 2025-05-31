@@ -6,6 +6,7 @@ import './App.css';
    ========================================================================= */
 const GRID_SIZE = 100;
 const SNAP_THRESHOLD = 7;
+
 /* =========================================================================
    Przyciąganie – dokładny offset do najbliższej linii
    ========================================================================= */
@@ -143,27 +144,10 @@ export default function App() {
   const [pickerColor, setPickerColor] = useState(BASIC_COLORS[0]);
   const [previewColor, setPreviewColor] = useState(null);
 
-  // —————————————————————————————————————————————
-// 1) Handlery panelu kolorów (add po wszystkich useState)
-const saveColor = () => {
-  if (selectedIndex == null) return;
-  setShapes(prev => {
-    const upd = [...prev];
-    const s = upd[selectedIndex];
-    s.color = previewColor;
-    s.borderColor = darkenColor(previewColor, 0.2);
-    return upd;
-  });
-  setShowColorPicker(false);
-  setPreviewColor(null);
-};
-
-
-const cancelColor = () => {
-  setShowColorPicker(false);
-  setPreviewColor(null);
-};
-// —————————————————————————————————————————————
+/* ---------------------------------------------------------------------
+     useEffect: nasłuchujemy, gdy stan „shapes” się zmieni, i logujemy
+     --------------------------------------------------------------------- */
+ 
 
 
   /* ---------------------------------------------------------------------
@@ -183,8 +167,14 @@ const cancelColor = () => {
        ---------------------------------------- */
     // Wewnątrz useEffect, zastąp dotychczasową drawAll() poniższą:
 
-const drawAll = () => {
-  // 1. Transformacja i czyszczenie
+// =======================
+// 1) drawAll(): rysowanie siatki + figur + uchwytów
+// =======================
+function drawAll() {
+  const canvas = canvasRef.current;
+  const ctx = canvas.getContext('2d');
+
+  // 1. Ustaw transformację (zoom + pan) i wyczyść obszar
   ctx.setTransform(scale, 0, 0, scale, viewOffset.x, viewOffset.y);
   ctx.clearRect(
     -viewOffset.x / scale,
@@ -193,10 +183,9 @@ const drawAll = () => {
     canvas.height / scale
   );
 
-  // 2. Rysowanie siatki
+  // 2. Rysuj siatkę
   ctx.strokeStyle = '#000';
   ctx.lineWidth = 0.5;
-
   const worldLeft   = -viewOffset.x / scale;
   const worldTop    = -viewOffset.y / scale;
   const worldRight  = (canvas.width  - viewOffset.x) / scale;
@@ -215,60 +204,63 @@ const drawAll = () => {
     ctx.stroke();
   }
 
-  // 3. Rysowanie figur z podglądem koloru
+  // 3. Rysuj figury (z ewentualnym podglądem koloru, gdy panel jest otwarty)
   shapes.forEach((s, i) => {
-    // dobór kolorów: jeśli panel otwarty i to zaznaczony kształt → podgląd
     const usePreview = showColorPicker && i === selectedIndex;
+    // Jeżeli podgląd – bierzemy kolor z previewColor, w przeciwnym wypadku z s.color
     const fillColor   = usePreview ? previewColor : s.color;
     const strokeColor = usePreview ? darkenColor(previewColor, 0.2) : s.borderColor;
 
-    // rysowanie kształtu
     if (s instanceof Circle) {
       ctx.beginPath();
       ctx.fillStyle   = fillColor;
       ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
       ctx.fill();
-      ctx.lineWidth   = 4;
+      ctx.lineWidth   = 4;                
       ctx.strokeStyle = strokeColor;
       ctx.stroke();
       ctx.closePath();
     } else {
+      // Prostokat / kwadrat
       ctx.fillStyle   = fillColor;
       ctx.lineWidth   = 8;
       ctx.strokeStyle = strokeColor;
-      ctx.strokeRect(s.x - s.width/2, s.y - s.height/2, s.width, s.height);
-      ctx.fillRect(  s.x - s.width/2, s.y - s.height/2, s.width, s.height);
+      ctx.strokeRect(s.x - s.width / 2, s.y - s.height / 2, s.width, s.height);
+      ctx.fillRect(  s.x - s.width / 2, s.y - s.height / 2, s.width, s.height);
     }
 
-    // 4. Rysowanie uchwytów dla zaznaczonego
+    // 4. Jeśli to zaznaczona figura, rysujemy uchwyty (handles) w rogach
     if (i === selectedIndex) {
-      const hs = 12;
-      const handles = s instanceof Circle
-        ? {
-            tl: [s.x - s.radius, s.y - s.radius],
-            tr: [s.x + s.radius, s.y - s.radius],
-            bl: [s.x - s.radius, s.y + s.radius],
-            br: [s.x + s.radius, s.y + s.radius],
-          }
-        : {
-            tl: [s.x - s.width/2,  s.y - s.height/2],
-            tr: [s.x + s.width/2,  s.y - s.height/2],
-            bl: [s.x - s.width/2,  s.y + s.height/2],
-            br: [s.x + s.width/2,  s.y + s.height/2],
-          };
+      const hs = 12; // wielkość kwadracika uchwytu w px
+      let handles;
+      if (s instanceof Circle) {
+        handles = {
+          tl: [s.x - s.radius, s.y - s.radius],
+          tr: [s.x + s.radius, s.y - s.radius],
+          bl: [s.x - s.radius, s.y + s.radius],
+          br: [s.x + s.radius, s.y + s.radius],
+        };
+      } else {
+        handles = {
+          tl: [s.x - s.width / 2,  s.y - s.height / 2],
+          tr: [s.x + s.width / 2,  s.y - s.height / 2],
+          bl: [s.x - s.width / 2,  s.y + s.height / 2],
+          br: [s.x + s.width / 2,  s.y + s.height / 2],
+        };
+      }
 
       ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.setTransform(1, 0, 0, 1, 0, 0); // reset transformacji, bo uchwyty rysujemy w układzie ekranu
       ctx.fillStyle = 'black';
       Object.values(handles).forEach(([hx, hy]) => {
         const sx = hx * scale + viewOffset.x;
         const sy = hy * scale + viewOffset.y;
-        ctx.fillRect(sx - hs/2, sy - hs/2, hs, hs);
+        ctx.fillRect(sx - hs / 2, sy - hs / 2, hs, hs);
       });
       ctx.restore();
     }
   });
-};
+}
 
 // Nie zapomnij wywoływać drawAll() w odpowiednich momentach,
 // np. bezpośrednio po każdej zmianie stanów w useEffect.
@@ -299,44 +291,50 @@ const drawAll = () => {
 
 // 1️⃣ – funkcja onMouseDown
 // … w useEffect, zamiast dotychczasowego onMouseDown:
-const onMouseDown = e => {
-  const rect    = canvas.getBoundingClientRect();
+
+function onMouseDown(e) {
+  const canvas = canvasRef.current;
+  const rect = canvas.getBoundingClientRect();
   const screenX = e.clientX - rect.left;
   const screenY = e.clientY - rect.top;
-  const worldX  = (screenX - viewOffset.x) / scale;
-  const worldY  = (screenY - viewOffset.y) / scale;
+  const worldX = (screenX - viewOffset.x) / scale;
+  const worldY = (screenY - viewOffset.y) / scale;
 
-  // ── PRAWY KLIK ── select/deselect + otwórz panel
-if (e.button === 2) {
-  e.preventDefault();
-  const idx = hitTest(screenX, screenY);
-  setSelectedIndex(idx !== -1 ? idx : null);
-  setShowColorPicker(idx !== -1);
-  setIsResizing(false);
-  if (idx !== -1) {
-    // startujemy podgląd od aktualnego koloru figury
-    setPickerColor(shapes[idx].color);
-    setPreviewColor(shapes[idx].color);
-  }
-  return;
-}
-
-
-  // ── LEWY KLIK ── drag / resize / pan (bez zmiany `selectedIndex`)
-  if (e.button !== 0) return;  // ignoruj inne przyciski
-
-  // jeśli klik w uchwyt → start resize
-  if (selectedIndex != null && startResizeIfHitHandle(screenX, screenY, worldX, worldY)) {
+  // ––––– PRAWY KLIK ––––– wybór/deselekcja figury + otwarcie panelu kolorów
+  if (e.button === 2) {
+    e.preventDefault();
+    const idx = hitTest(screenX, screenY);
+    setSelectedIndex(idx !== -1 ? idx : null);
+    setShowColorPicker(idx !== -1);
+    setIsResizing(false);
+    if (idx !== -1) {
+      // Ustawiamy początkowy kolor podglądu z już istniejącej figury
+      setPickerColor(shapes[idx].color);
+      setPreviewColor(shapes[idx].color);
+    }
     return;
   }
 
-  // jeśli klik w kształt → drag
+  // ––––– LEWY KLIK ––––– drag / resize / pan (bez zmiany `selectedIndex`)
+  if (e.button !== 0) return;
+
+  // 1) Klik w uchwyt rogu → rozpoczynamy RESIZE
+  if (
+    selectedIndex != null &&
+    startResizeIfHitHandle(screenX, screenY, worldX, worldY)
+  ) {
+    return;
+  }
+
+  // 2) Klik w figurę → rozpoczynamy DRAG
   const idx2 = hitTest(screenX, screenY);
   if (idx2 !== -1) {
     if (isDeleting) {
+      // Jeżeli tryb usuwania, to od razu usuwamy figurę i odznaczamy
       setShapes(prev => prev.filter((_, i) => i !== idx2));
       setSelectedIndex(null);
       setShowColorPicker(false);
+      drawAll();
       return;
     }
     setDraggedIndex(idx2);
@@ -345,30 +343,42 @@ if (e.button === 2) {
     return;
   }
 
-  // klik na tło → deselect + pan
+  // 3) Klik w tło → deselect + zaczynamy PAN (przesuwanie widoku)
   setSelectedIndex(null);
   setShowColorPicker(false);
   setIsPanning(true);
   setLastPan({ x: e.clientX, y: e.clientY });
-};
+}
 
-// … w tej samej przestrzeni, pomocniczo:
+// Pomocnicza funkcja: czy klik w uchwyt resize? Jeśli tak → ustawiamy stan `isResizing` i `resizingCorner`.
 function startResizeIfHitHandle(screenX, screenY, worldX, worldY) {
-  const s  = shapes[selectedIndex];
-  const hs = 12;
-  const handles = s instanceof Circle
-    ? { tl: [s.x - s.radius, s.y - s.radius], tr: [s.x + s.radius, s.y - s.radius],
-        bl: [s.x - s.radius, s.y + s.radius], br: [s.x + s.radius, s.y + s.radius] }
-    : { tl: [s.x - s.width/2, s.y - s.height/2], tr: [s.x + s.width/2, s.y - s.height/2],
-        bl: [s.x - s.width/2, s.y + s.height/2], br: [s.x + s.width/2, s.y + s.height/2] };
+  const s = shapes[selectedIndex];
+  if (!s) return false;
+  const hs = 12; // wielkość uchwytu w px
+  let handles;
+  if (s instanceof Circle) {
+    handles = {
+      tl: [s.x - s.radius, s.y - s.radius],
+      tr: [s.x + s.radius, s.y - s.radius],
+      bl: [s.x - s.radius, s.y + s.radius],
+      br: [s.x + s.radius, s.y + s.radius],
+    };
+  } else {
+    handles = {
+      tl: [s.x - s.width / 2,  s.y - s.height / 2],
+      tr: [s.x + s.width / 2,  s.y - s.height / 2],
+      bl: [s.x - s.width / 2,  s.y + s.height / 2],
+      br: [s.x + s.width / 2,  s.y + s.height / 2],
+    };
+  }
 
   for (let key in handles) {
     const [hx, hy] = handles[key];
     const sx = hx * scale + viewOffset.x;
     const sy = hy * scale + viewOffset.y;
     if (
-      screenX >= sx - hs/2 && screenX <= sx + hs/2 &&
-      screenY >= sy - hs/2 && screenY <= sy + hs/2
+      screenX >= sx - hs / 2 && screenX <= sx + hs / 2 &&
+      screenY >= sy - hs / 2 && screenY <= sy + hs / 2
     ) {
       setIsResizing(true);
       setResizingCorner(key);
@@ -383,6 +393,7 @@ function startResizeIfHitHandle(screenX, screenY, worldX, worldY) {
   return false;
 }
 
+
 // I pamiętaj przy rejestracji:
 canvas.addEventListener('mousedown', onMouseDown);
 canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -393,141 +404,231 @@ canvas.addEventListener('contextmenu', e => e.preventDefault());
     /* ------------------------------------------------------------------
        MOUSE‑MOVE  (panning / resize / drag)
        ------------------------------------------------------------------ */
-    const onMouseMove = e => {
-  /* --- 1. Panning ma najwyższy priorytet --- */
+function onMouseMove(e) {
+  const canvas = canvasRef.current;
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const screenX = e.clientX - rect.left;
+  const screenY = e.clientY - rect.top;
+
+  // 1️⃣ PAN — jeśli trwa przesuwanie widoku
   if (isPanning) {
     const dx = e.clientX - lastPan.x;
     const dy = e.clientY - lastPan.y;
     setViewOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
     setLastPan({ x: e.clientX, y: e.clientY });
-    return;                       // 👉 nic więcej w tej klatce
+    drawAll();
+    return;
   }
 
-  /* --- 2. Współrzędne myszy w układzie „światowym” --- */
-  const rect = canvas.getBoundingClientRect();
-  const mouseX = (e.clientX - rect.left - viewOffset.x) / scale;
-  const mouseY = (e.clientY - rect.top  - viewOffset.y) / scale;
+  // 2️⃣ Obliczamy mysz w "światowych" współrzędnych
+  const worldX = (screenX - viewOffset.x) / scale;
+  const worldY = (screenY - viewOffset.y) / scale;
 
-  /* --------------------------------------------------------------------
-     A. RESIZE
-     -------------------------------------------------------------------- */
-  if (isResizing && selectedIndex != null &&
-      resizingCorner && initialRef.current?.shape) {
+  // 3️⃣ Połowa obramowania w jednostkach świata:
+  //     lineWidth = 8px, więc halfStroke = 4px przeskalowane:
+  const halfStroke = 4 / scale;
 
+  // 4️⃣ RESIZE — jeśli aktywna operacja resize i wybrano figurę
+  if (
+    isResizing &&
+    selectedIndex != null &&
+    resizingCorner &&
+    initialRef.current?.shape
+  ) {
+    // Zapamiętujemy oryginalne wymiary + pozycję przed rozpoczęciem resize
     const original = JSON.parse(JSON.stringify(initialRef.current.shape));
     const startX = initialRef.current.x;
     const startY = initialRef.current.y;
 
     setShapes(prev => {
       const updated = [...prev];
-      const shape   = updated[selectedIndex];
+      const s = updated[selectedIndex];
 
-      /* ————————————  K O Ł O  ———————————— */
-      if (shape instanceof Circle) {
+      if (s instanceof Circle) {
+        // —————— KOŁO ——————
+        // Wyznaczamy, który punkt (fixedX,fixedY) jest przeciwległym bokiem:
         let fixedX, fixedY;
-        const r  = original.radius;
+        const r0 = original.radius;
         const cx = original.x;
         const cy = original.y;
 
-        if (resizingCorner === 'tl') { fixedX = cx + r; fixedY = cy + r; }
-        if (resizingCorner === 'tr') { fixedX = cx - r; fixedY = cy + r; }
-        if (resizingCorner === 'bl') { fixedX = cx + r; fixedY = cy - r; }
-        if (resizingCorner === 'br') { fixedX = cx - r; fixedY = cy - r; }
+        if (resizingCorner === 'tl') { fixedX = cx + r0; fixedY = cy + r0; }
+        if (resizingCorner === 'tr') { fixedX = cx - r0; fixedY = cy + r0; }
+        if (resizingCorner === 'bl') { fixedX = cx + r0; fixedY = cy - r0; }
+        if (resizingCorner === 'br') { fixedX = cx - r0; fixedY = cy - r0; }
 
-        const dx = mouseX - fixedX;
-        const dy = mouseY - fixedY;
-        const side = Math.min(Math.abs(dx), Math.abs(dy));      // kwadrat w cieniu koła
+        // Nowy promień tak, aby kursor przy „ciągniętym” rogu pokrywał brzeg koła:
+        const dx0 = worldX - fixedX;
+        const dy0 = worldY - fixedY;
+        const side = Math.min(Math.abs(dx0), Math.abs(dy0));
         const newRadius = Math.max(5, side / 2);
 
-        /* przesuń środek tak, by „ciągnięty” brzeg został tam gdzie kursor */
-        shape.x = fixedX + Math.sign(dx) * newRadius;
-        shape.y = fixedY + Math.sign(dy) * newRadius;
-        shape.radius = newRadius;
+        // Przesuwamy środek koła tak, by “ciągnięty” brzeg zawsze podążał za wskaźnikiem:
+        s.x = fixedX + Math.sign(dx0) * newRadius;
+        s.y = fixedY + Math.sign(dy0) * newRadius;
+        s.radius = newRadius;
 
-        /* przyciągnij: lewy/prawy + górny/dolny */
-        const r2 = shape.radius;
-        const left   = shape.x - r2, right  = shape.x + r2;
-        const top    = shape.y - r2, bottom = shape.y + r2;
+        // Obliczamy bounding‐box wraz z połową obramowania:
+        const r2 = s.radius;
+        const left   = s.x - r2 - halfStroke;
+        const right  = s.x + r2 + halfStroke;
+        const top    = s.y - r2 - halfStroke;
+        const bottom = s.y + r2 + halfStroke;
 
-        shape.x += getSnapDelta(left,  right);
-        shape.y += getSnapDelta(top,   bottom);
+        // Snapping: “łapiemy” którejś z tych zewnętrznych krawędzi
+        const dxSnap = getSnapDelta(left, right);
+        const dySnap = getSnapDelta(top, bottom);
+        s.x += dxSnap;
+        s.y += dySnap;
 
-      /* ———————————  P R O S T O K Ą T  ——————————— */
       } else {
+        // —————— PROSTOKĄT / KWADRAT ——————
         let left, right, top, bottom;
         const ox = original.x;
         const oy = original.y;
         const ow = original.width;
         const oh = original.height;
-        const dx = mouseX - startX;
-        const dy = mouseY - startY;
+        const dx0 = worldX - startX;
+        const dy0 = worldY - startY;
 
-        /* oblicz nowe krawędzie „ciągniętego” rogu */
-        if (resizingCorner === 'tl')      { left = ox - ow/2 + dx;  top = oy - oh/2 + dy;  right = ox + ow/2;       bottom = oy + oh/2;      }
-        else if (resizingCorner === 'tr') { left = ox - ow/2;       top = oy - oh/2 + dy;  right = ox + ow/2 + dx; bottom = oy + oh/2;      }
-        else if (resizingCorner === 'bl') { left = ox - ow/2 + dx;  top = oy - oh/2;       right = ox + ow/2;      bottom = oy + oh/2 + dy; }
-        else if (resizingCorner === 'br') { left = ox - ow/2;       top = oy - oh/2;       right = ox + ow/2 + dx; bottom = oy + oh/2 + dy; }
+        if (resizingCorner === 'tl') {
+          left   = ox - ow / 2 + dx0;
+          top    = oy - oh / 2 + dy0;
+          right  = ox + ow / 2;
+          bottom = oy + oh / 2;
+        } else if (resizingCorner === 'tr') {
+          left   = ox - ow / 2;
+          top    = oy - oh / 2 + dy0;
+          right  = ox + ow / 2 + dx0;
+          bottom = oy + oh / 2;
+        } else if (resizingCorner === 'bl') {
+          left   = ox - ow / 2 + dx0;
+          top    = oy - oh / 2;
+          right  = ox + ow / 2;
+          bottom = oy + oh / 2 + dy0;
+        } else if (resizingCorner === 'br') {
+          left   = ox - ow / 2;
+          top    = oy - oh / 2;
+          right  = ox + ow / 2 + dx0;
+          bottom = oy + oh / 2 + dy0;
+        }
 
-        /* ➡️ SNAP – tylko krawędzie, które faktycznie poruszasz */
-        if (resizingCorner.includes('l')) left   += snapOffset(left);
-        if (resizingCorner.includes('r')) right  += snapOffset(right);
-        if (resizingCorner.includes('t')) top    += snapOffset(top);
-        if (resizingCorner.includes('b')) bottom += snapOffset(bottom);
+        // Rozszerzamy krawędzie o halfStroke, by uwzględnić lineWidth:
+        left   -= halfStroke;
+        right  += halfStroke;
+        top    -= halfStroke;
+        bottom += halfStroke;
 
-        /* finalnie aktualizuj figurę */
-        shape.width  = Math.max(10, right  - left);
-        shape.height = Math.max(10, bottom - top);
-        shape.x = (left + right) / 2;
-        shape.y = (top  + bottom) / 2;
+        // Snapujemy tylko te krawędzie, które faktycznie ruszamy:
+        if (resizingCorner.includes('l')) {
+          left += snapOffset(left);
+        }
+        if (resizingCorner.includes('r')) {
+          right += snapOffset(right);
+        }
+        if (resizingCorner.includes('t')) {
+          top += snapOffset(top);
+        }
+        if (resizingCorner.includes('b')) {
+          bottom += snapOffset(bottom);
+        }
+
+        // Na podstawie nowych, “snapniętych” krawędzi ustawiamy wymiary i środek:
+        s.width  = Math.max(10, right - left);
+        s.height = Math.max(10, bottom - top);
+        s.x = (left + right) / 2;
+        s.y = (top + bottom) / 2;
       }
 
       return updated;
     });
-    return;                         // nic więcej – koniec resize
+
+    // Po każdej zmianie wielkości należy ponownie narysować całą scenę:
+    drawAll();
+    return;
   }
 
-  /* --------------------------------------------------------------------
-     B. DRAG FIGURY
-     -------------------------------------------------------------------- */
+  // 5️⃣ DRAG: jeśli przenosimy kształt
   if (draggedIndex != null) {
     setShapes(prev => {
-      const u     = [...prev];
-      let   x     = mouseX - offset.x;
-      let   y     = mouseY - offset.y;
-      const shape = u[draggedIndex];
+      const u = [...prev];
+      let x = worldX - offset.x;
+      let y = worldY - offset.y;
+      const s = u[draggedIndex];
 
-      if (shape instanceof Circle) {
-        const r = shape.radius;
-        const dx = getSnapDelta(x - r, x + r);
-        const dy = getSnapDelta(y - r, y + r);
-        x += dx;
-        y += dy;
+      if (s instanceof Circle) {
+        const r = s.radius;
+        // Łapiemy bounding‐box koła z obramowaniem:
+        const dxSnap = getSnapDelta(
+          x - r - halfStroke,
+          x + r + halfStroke
+        );
+        const dySnap = getSnapDelta(
+          y - r - halfStroke,
+          y + r + halfStroke
+        );
+        x += dxSnap;
+        y += dySnap;
       } else {
-        const halfW = shape.width  / 2;
-        const halfH = shape.height / 2;
-        const dx = getSnapDelta(x - halfW, x + halfW);
-        const dy = getSnapDelta(y - halfH, y + halfH);
-        x += dx;
-        y += dy;
+        const halfW = s.width / 2;
+        const halfH = s.height / 2;
+        // Łapiemy bounding‐box prostokąta z obramowaniem:
+        const dxSnap = getSnapDelta(
+          x - halfW - halfStroke,
+          x + halfW + halfStroke
+        );
+        const dySnap = getSnapDelta(
+          y - halfH - halfStroke,
+          y + halfH + halfStroke
+        );
+        x += dxSnap;
+        y += dySnap;
       }
 
-      shape.x = x;
-      shape.y = y;
+      s.x = x;
+      s.y = y;
       return u;
     });
+
+    drawAll();
+    return;
   }
-};
+
+  // 6️⃣ Gdy nic innego nie robimy, można tu ewentualnie ustawiać cursor="nwse-resize" itp.,
+  //    ale to już wyłącznie kosmetyka — snap działa powyżej.
+}
+
+
+
 
 
     /* ------------------------------------------------------------------
        MOUSE‑UP – kończy panning / drag / resize
        ------------------------------------------------------------------ */
-    const onMouseUp = () => {
-      setIsPanning(false);
-      setDraggedIndex(null);
-      setIsResizing(false);
-      initialRef.current = null;
-    };
+   function onMouseUp() {
+  setIsPanning(false);
+  setDraggedIndex(null);
+  setIsResizing(false);
+  initialRef.current = null;
+    // Za każdym razem, gdy „shapes” zostanie zmienione, wypisujemy informacje
+    // o wszystkich obecnych kształtach w konsoli.
+
+    shapes.forEach((s) => {
+      
+        if (s instanceof Circle) {
+        console.log(
+          `Object: Circle \nposition: (${s.x}, ${s.y}) \nradius: ${s.radius} \ncolor: ${s.color} \nborder_color: ${s.borderColor}`
+        );
+      } else if (s instanceof Rect) {
+        console.log(
+          `Object: Rect \nposition: (${s.x - s.width / 2 - 4}, ${s.y + s.height / 2 + 4}) \nwidth: ${s.width} \nheight: ${s.height} \ncolor: ${s.color} \nborder_color: ${s.borderColor}`
+        );
+      }
+      
+    });
+
+}
 
     /* ------------------------------------------------------------------
        Dodatkowe eventy (contextmenu, scroll‑zoom, dblclick, klawisze)
@@ -569,22 +670,36 @@ const onContext = e => {
       setViewOffset({ x: newOffsetX, y: newOffsetY });
     };
 
-    const onDoubleClick = e => {
-      const rect = canvas.getBoundingClientRect();
-      const x = (e.clientX - rect.left - viewOffset.x) / scale;
-      const y = (e.clientY - rect.top - viewOffset.y) / scale;
-      let n = null;
-      if (shape === 'circle') n = new Circle(x, y, 50, "#e0e0e0", "#9e9e9e");
-      if (shape === 'rect') n = new Rect(x, y, 200, 100, "#e0e0e0", "#9e9e9e");
-      if (shape === 'square') n = new Square(x, y, 100, "#e0e0e0", "#9e9e9e");
-      if (n) {
-        setShapes(prev => {
-          const u = [...prev, n];
-          setSelectedIndex(u.length - 1);
-          return u;
-        });
-      }
-    };
+const onDoubleClick = e => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left - viewOffset.x) / scale;
+    const y = (e.clientY - rect.top - viewOffset.y) / scale;
+    let n = null;
+
+    if (shape === 'circle') {
+      n = new Circle(x, y, 46, "#e0e0e0", "#9e9e9e");
+      console.log(`Object: Circle \nposition: (${n.x}, ${n.y}) \nradius: ${n.radius} \ncolor: ${n.color} \nborder_color: ${n.borderColor}`);
+    }
+    if (shape === 'rect') {
+      n = new Rect(x, y, 192, 92, "#e0e0e0", "#9e9e9e");
+      console.log(`Object: Rect \nposition: (${n.x - n.width / 2 - 4}, ${n.y + n.height + 4}) \nwidth: ${n.width} \nheight: ${n.height} \ncolor: ${n.color} \nborder_color: ${n.borderColor}`);
+    }
+    if (shape === 'square') {
+      n = new Square(x, y, 92, "#e0e0e0", "#9e9e9e");
+      console.log(`Object: Square \nposition: (${n.x - n.width / 2 - 4}, ${n.y + n.height + 4}) \nwidth: ${n.width} \nheight: ${n.height} \ncolor: ${n.color} \nborder_color: ${n.borderColor}`);
+    }
+
+    if (n) {
+      setShapes(prev => {
+        const u = [...prev, n];
+        setSelectedIndex(u.length - 1);
+        return u;
+      });
+      // Nie logujemy tutaj – logika przeniesiona do useEffect, bo kształty mogą się
+      // zmieniać także przy przesuwaniu, usuwaniu czy zmianie koloru.
+    }
+  };
 
     const onKeyDown = e => {
       const isMac = navigator.platform.toUpperCase().includes('MAC');
@@ -637,7 +752,35 @@ const onContext = e => {
     showColorPicker,
     pickerColor
   ]);
+  useEffect(() => {
+    // 1) Przechwycenie naciśnięcia F5
+    const handleKeyDown = (e) => {
+      if (e.key === 'F5') {
+        e.preventDefault(); // blokujemy domyślne odświeżenie
+        const confirmReload = window.confirm('Czy na pewno chcesz odświeżyć stronę?');
+        if (confirmReload) {
+          window.location.reload();
+        }
+      }
+    };
 
+    // 2) Obsługa beforeunload dla pozostałych sposobów odświeżenia / zamknięcia
+    const handleBeforeUnload = (e) => {
+      // Standardowy dialog przeglądarki. Ustawienie returnValue wymusza pokazanie okna.
+      e.preventDefault();
+      e.returnValue = ''; 
+      // Tekst w niektórych przeglądarkach nie jest wyświetlany, ale e.returnValue='' powoduje
+      // że przeglądarka wyświetli domyślny komunikat potwierdzający opuszczenie/odświeżenie.
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
   /* ---------------------------------------------------------------------
      JSX – przyciski + canvas
      --------------------------------------------------------------------- */
@@ -699,6 +842,7 @@ if (showColorPicker && selectedIndex != null) {
             setShape('');
             setSelectedIndex(null);
           }}
+          className={isDeleting === true ? 'active-shape' : ''}
         >
           🗑️
         </button>
@@ -746,9 +890,6 @@ if (showColorPicker && selectedIndex != null) {
           }}
         />
       ))}
-    </div>
-    <div className="actions">
-      <button onClick={cancelColor} id="cancel">Anuluj</button>
     </div>
   </div>
 )}
