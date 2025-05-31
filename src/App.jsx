@@ -105,7 +105,6 @@ const BASIC_COLORS = [
   "#00ffff", // cyjan
   "#000000", // czarny
   "#ffffff", // biały
-  "#808080", // szary
 ];
 
 // Funkcja do przyciemniania koloru o podany procent (0–1)
@@ -127,6 +126,7 @@ const darkenColor = (hex, amount) => {
 export default function App() {
   /* ---------- referencje & stany ---------- */
   const canvasRef = useRef(null);
+  const clipboardRef = useRef(null);
   const [shape, setShape] = useState('');
   const [shapes, setShapes] = useState([]);
   const [draggedIndex, setDraggedIndex] = useState(null);
@@ -292,6 +292,7 @@ function drawAll() {
 // 1️⃣ – funkcja onMouseDown
 // … w useEffect, zamiast dotychczasowego onMouseDown:
 
+
 function onMouseDown(e) {
   const canvas = canvasRef.current;
   const rect = canvas.getBoundingClientRect();
@@ -300,22 +301,18 @@ function onMouseDown(e) {
   const worldX = (screenX - viewOffset.x) / scale;
   const worldY = (screenY - viewOffset.y) / scale;
 
-  // ––––– PRAWY KLIK ––––– wybór/deselekcja figury + otwarcie panelu kolorów
-  if (e.button === 2) {
+  // 🟡 Nowość: ŚRODKOWY PRZYCISK = PAN
+  if (e.button === 1) {
     e.preventDefault();
-    const idx = hitTest(screenX, screenY);
-    setSelectedIndex(idx !== -1 ? idx : null);
-    setShowColorPicker(idx !== -1);
-    setIsResizing(false);
-    if (idx !== -1) {
-      // Ustawiamy początkowy kolor podglądu z już istniejącej figury
-      setPickerColor(shapes[idx].color);
-      setPreviewColor(shapes[idx].color);
-    }
+    setIsPanning(true);
+    setLastPan({ x: e.clientX, y: e.clientY });
     return;
   }
 
-  // ––––– LEWY KLIK ––––– drag / resize / pan (bez zmiany `selectedIndex`)
+  // PRAWY KLIK – panel kolorów
+  
+
+  // LEWY KLIK – drag / resize
   if (e.button !== 0) return;
 
   // 1) Klik w uchwyt rogu → rozpoczynamy RESIZE
@@ -330,24 +327,33 @@ function onMouseDown(e) {
   const idx2 = hitTest(screenX, screenY);
   if (idx2 !== -1) {
     if (isDeleting) {
-      // Jeżeli tryb usuwania, to od razu usuwamy figurę i odznaczamy
+      // Jeśli tryb usuwania – usuń
       setShapes(prev => prev.filter((_, i) => i !== idx2));
       setSelectedIndex(null);
       setShowColorPicker(false);
       drawAll();
       return;
     }
+
+    // 🟢 ZAZNACZENIE figury
+    setSelectedIndex(idx2);
+    setShowColorPicker(true); // ukryj picker jeśli nie był otwarty wcześniej
+
+    // 🟢 Ustaw podgląd koloru (jak było wcześniej w prawym kliknięciu)
+    setPickerColor(shapes[idx2].color);
+    setPreviewColor(shapes[idx2].color);
+
+    // 🟢 Rozpocznij drag
     setDraggedIndex(idx2);
     setOffset({ x: worldX - shapes[idx2].x, y: worldY - shapes[idx2].y });
-    setShowColorPicker(false);
     return;
   }
 
   // 3) Klik w tło → deselect + zaczynamy PAN (przesuwanie widoku)
-  setSelectedIndex(null);
-  setShowColorPicker(false);
-  setIsPanning(true);
-  setLastPan({ x: e.clientX, y: e.clientY });
+    setSelectedIndex(null);
+    setShowColorPicker(false);
+  
+
 }
 
 // Pomocnicza funkcja: czy klik w uchwyt resize? Jeśli tak → ustawiamy stan `isResizing` i `resizingCorner`.
@@ -382,6 +388,7 @@ function startResizeIfHitHandle(screenX, screenY, worldX, worldY) {
     ) {
       setIsResizing(true);
       setResizingCorner(key);
+      setShowColorPicker(false);
       initialRef.current = {
         x: worldX,
         y: worldY,
@@ -551,6 +558,7 @@ function onMouseMove(e) {
 
   // 5️⃣ DRAG: jeśli przenosimy kształt
   if (draggedIndex != null) {
+    setShowColorPicker(false);
     setShapes(prev => {
       const u = [...prev];
       let x = worldX - offset.x;
@@ -607,10 +615,21 @@ function onMouseMove(e) {
        MOUSE‑UP – kończy panning / drag / resize
        ------------------------------------------------------------------ */
    function onMouseUp() {
+  const wasResizing = isResizing;
+  const wasDragging = draggedIndex != null;// zapamiętujemy, czy trwał resize
+
   setIsPanning(false);
   setDraggedIndex(null);
   setIsResizing(false);
   initialRef.current = null;
+
+  // Jeśli zakończyliśmy RESIZE i mamy zaznaczoną figurę — ponownie pokaż kolor picker
+    if ((wasResizing || wasDragging) && selectedIndex != null) {
+      setShowColorPicker(true);
+      const s = shapes[selectedIndex];
+      setPickerColor(s.color);
+      setPreviewColor(s.color);
+    }
     // Za każdym razem, gdy „shapes” zostanie zmienione, wypisujemy informacje
     // o wszystkich obecnych kształtach w konsoli.
 
@@ -633,18 +652,6 @@ function onMouseMove(e) {
     /* ------------------------------------------------------------------
        Dodatkowe eventy (contextmenu, scroll‑zoom, dblclick, klawisze)
        ------------------------------------------------------------------ */
-    // CONTEXTMENU  (tylko prawe — zaznaczanie/deselekcja)
-// CONTEXTMENU  (tylko prawy przycisk – zaznaczanie/deselekcja)
-const onContext = e => {
-  e.preventDefault();
-  const rect = canvas.getBoundingClientRect();
-  const screenX = e.clientX - rect.left;
-  const screenY = e.clientY - rect.top;
-  const idx = hitTest(screenX, screenY);
-  setSelectedIndex(idx !== -1 ? idx : null);
-  setIsResizing(false);
-};
-
 
 
     const onWheel = e => {
@@ -701,15 +708,74 @@ const onDoubleClick = e => {
     }
   };
 
-    const onKeyDown = e => {
-      const isMac = navigator.platform.toUpperCase().includes('MAC');
-      const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
-      if (ctrlOrCmd && e.key === '0') {
-        e.preventDefault();
-        setScale(1);
-        setViewOffset({ x: 0, y: 0 });
-      }
-    };
+
+const onKeyDown = e => {
+  const isMac = navigator.platform.toUpperCase().includes('MAC');
+  const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
+
+  // 🔄 RESET ZOOMU
+  if (ctrlOrCmd && e.key === '0') {
+    e.preventDefault();
+    setScale(1);
+    setViewOffset({ x: 0, y: 0 });
+    return;
+  }
+
+  // 🧷 KOPIOWANIE
+  if (ctrlOrCmd && e.key === 'c') {
+    e.preventDefault();
+    if (selectedIndex != null) {
+      const original = shapes[selectedIndex];
+      clipboardRef.current = JSON.parse(JSON.stringify(original));
+      clipboardRef.current.type = original instanceof Circle ? 'circle' : 'rect';
+    }
+    return;
+  }
+
+  // 📋 WKLEJANIE
+  if (ctrlOrCmd && e.key === 'v') {
+    e.preventDefault();
+    const copied = clipboardRef.current;
+    if (!copied) return;
+
+    let newShape = null;
+
+    if (copied.type === 'circle') {
+      newShape = new Circle(
+        copied.x + 40,
+        copied.y + 40,
+        copied.radius,
+        copied.color,
+        copied.borderColor
+      );
+    } else if (copied.type === 'rect') {
+      newShape = new Rect(
+        copied.x + 40,
+        copied.y + 40,
+        copied.width,
+        copied.height,
+        copied.color,
+        copied.borderColor
+      );
+    }
+
+    if (newShape) {
+      setShapes(prev => {
+        const updated = [...prev, newShape];
+        setSelectedIndex(updated.length - 1);
+        setShowColorPicker(true);
+        setPickerColor(newShape.color);
+        setPreviewColor(newShape.color);
+        return updated;
+      });
+
+      // Automatyczne przesuwanie w clipboardzie przy kolejnych Ctrl+V
+      clipboardRef.current.x += 40;
+      clipboardRef.current.y += 40;
+    }
+    return;
+  }
+};
 
     /* ------------------------------------------------------------------
        Rejestracja listenerów
@@ -718,7 +784,6 @@ const onDoubleClick = e => {
     canvas.addEventListener('mousemove', onMouseMove);
     canvas.addEventListener('mouseup', onMouseUp);
     window.addEventListener('mouseup', onMouseUp);
-    canvas.addEventListener('contextmenu', onContext);
     canvas.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('dblclick', onDoubleClick);
     window.addEventListener('keydown', onKeyDown);
@@ -731,7 +796,6 @@ const onDoubleClick = e => {
       canvas.removeEventListener('mousemove', onMouseMove);
       canvas.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('mouseup', onMouseUp);
-      canvas.removeEventListener('contextmenu', onContext);
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('dblclick', onDoubleClick);
       window.removeEventListener('keydown', onKeyDown);
@@ -792,8 +856,8 @@ if (showColorPicker && selectedIndex != null) {
   const screenY = s.y * scale + viewOffset.y;
   panelStyle = {
     position: 'absolute',
-    left: `${screenX + 10}px`,
-    top:  `${screenY + 10}px`,
+    left: `${screenX + -150}px`,
+    top:  `${screenY + -180}px`,
   };
 }
 
@@ -853,7 +917,7 @@ if (showColorPicker && selectedIndex != null) {
     {showColorPicker && selectedIndex != null && (
   <div className="color-panel" style={panelStyle}>
     <h3>Wybierz kolor:</h3>
-    <div className="color-picker-input">
+      <div className="preset-colors">
       <input
         type="color"
         value={pickerColor}
@@ -870,8 +934,6 @@ if (showColorPicker && selectedIndex != null) {
           });
         }}
       />
-    </div>
-    <div className="preset-colors">
       {BASIC_COLORS.map(c => (
         <button
           key={c}

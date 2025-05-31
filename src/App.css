@@ -76,9 +76,8 @@ button div{
   margin-bottom: 8px;
 }
 
-.color-picker-input input[type="color"] {
+ input[type="color"] {
   width: 32px;
-  height: 32px;
   padding: 0;
   border: none;
   cursor: pointer;
