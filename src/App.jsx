@@ -36,6 +36,7 @@ const getSnapDelta = (...edges) => {
    ========================================================================= */
 class Circle {
   constructor(x, y, radius, color, borderColor) {
+    this.type = 'circle';
     this.x = x;
     this.y = y;
     this.radius = radius;
@@ -61,6 +62,7 @@ class Circle {
 
 class Rect {
   constructor(x, y, width, height, color, borderColor) {
+    this.type = 'rect';
     this.x = x;
     this.y = y;
     this.width = width;
@@ -91,8 +93,9 @@ class Rect {
 }
 
 class Square extends Rect {
-  constructor(x, y, size, color, borderColor) {
+ constructor(x, y, size, color, borderColor) {
     super(x, y, size, size, color, borderColor);
+    this.type = 'square';
   }
 }
 // zamiast dotychczasowych BASIC_COLORS:
@@ -143,6 +146,11 @@ export default function App() {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [pickerColor, setPickerColor] = useState(BASIC_COLORS[0]);
   const [previewColor, setPreviewColor] = useState(null);
+
+   /* =========================================================================
+     Funkcja do eksportu wszystkich kształtów jako JSON
+     ========================================================================= */
+
 
 /* ---------------------------------------------------------------------
      useEffect: nasłuchujemy, gdy stan „shapes” się zmieni, i logujemy
@@ -334,18 +342,29 @@ function onMouseDown(e) {
       drawAll();
       return;
     }
+    setShapes(prev => {
+      const arr = [...prev];
+      const [item] = arr.splice(idx2, 1);
+      arr.push(item);
+      return arr;
+    });
+    // Po zapisaniu powyżej w state, nowy indeks to długość tablicy – 1
 
-    // 🟢 ZAZNACZENIE figury
-    setSelectedIndex(idx2);
-    setShowColorPicker(true); // ukryj picker jeśli nie był otwarty wcześniej
+    const newIndex = shapes.length - 1; // ale uwaga: shape.length tutaj to jeszcze STARY stan
+    // Lepiej więc, żeby po zmianie setShapes od razu odczytać właściwy indeks w callbacku:
+    setShapes(prev => {
+      // Wewnątrz tego callbacka „prev” to już zaktualizowana tablica
+      const arr = [...prev];
+      const targetIndex = arr.length - 1;
+      setSelectedIndex(targetIndex);
+      setShowColorPicker(true);
+      setPickerColor(arr[targetIndex].color);
+      setPreviewColor(arr[targetIndex].color);
+      setDraggedIndex(targetIndex);
+      setOffset({ x: worldX - arr[targetIndex].x, y: worldY - arr[targetIndex].y });
+      return arr;
+    });
 
-    // 🟢 Ustaw podgląd koloru (jak było wcześniej w prawym kliknięciu)
-    setPickerColor(shapes[idx2].color);
-    setPreviewColor(shapes[idx2].color);
-
-    // 🟢 Rozpocznij drag
-    setDraggedIndex(idx2);
-    setOffset({ x: worldX - shapes[idx2].x, y: worldY - shapes[idx2].y });
     return;
   }
 
@@ -414,36 +433,36 @@ canvas.addEventListener('contextmenu', e => e.preventDefault());
 function onMouseMove(e) {
   const canvas = canvasRef.current;
   if (!canvas) return;
+
+  // 1. Obliczamy pozycję kursora względem lewego/górnego rogu canvas:
   const rect = canvas.getBoundingClientRect();
   const screenX = e.clientX - rect.left;
   const screenY = e.clientY - rect.top;
 
-  // 1️⃣ PAN — jeśli trwa przesuwanie widoku
+  // 2. PAN: jeśli trwa przesuwanie widoku (środkowy przycisk)
   if (isPanning) {
-    const dx = e.clientX - lastPan.x;
-    const dy = e.clientY - lastPan.y;
+    const dx = screenX - lastPan.x;
+    const dy = screenY - lastPan.y;
     setViewOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
-    setLastPan({ x: e.clientX, y: e.clientY });
+    setLastPan({ x: screenX, y: screenY });
     drawAll();
     return;
   }
 
-  // 2️⃣ Obliczamy mysz w "światowych" współrzędnych
+  // 3. Obliczamy pozycję kursora w "światowych" współrzędnych
   const worldX = (screenX - viewOffset.x) / scale;
   const worldY = (screenY - viewOffset.y) / scale;
 
-  // 3️⃣ Połowa obramowania w jednostkach świata:
-  //     lineWidth = 8px, więc halfStroke = 4px przeskalowane:
-  const halfStroke = 4 / scale;
+  // 4. Połowa grubości obramowania w jednostkach świata:
+  const halfStroke = 4 / scale; // lineWidth = 8px → halfStroke = 4px skaluje się / scale
 
-  // 4️⃣ RESIZE — jeśli aktywna operacja resize i wybrano figurę
+  // 5. RESIZE: jeśli trwa operacja resize i mamy wybraną figurę
   if (
     isResizing &&
     selectedIndex != null &&
     resizingCorner &&
     initialRef.current?.shape
   ) {
-    // Zapamiętujemy oryginalne wymiary + pozycję przed rozpoczęciem resize
     const original = JSON.parse(JSON.stringify(initialRef.current.shape));
     const startX = initialRef.current.x;
     const startY = initialRef.current.y;
@@ -453,8 +472,7 @@ function onMouseMove(e) {
       const s = updated[selectedIndex];
 
       if (s instanceof Circle) {
-        // —————— KOŁO ——————
-        // Wyznaczamy, który punkt (fixedX,fixedY) jest przeciwległym bokiem:
+        // ======= KOŁO =======
         let fixedX, fixedY;
         const r0 = original.radius;
         const cx = original.x;
@@ -465,32 +483,28 @@ function onMouseMove(e) {
         if (resizingCorner === 'bl') { fixedX = cx + r0; fixedY = cy - r0; }
         if (resizingCorner === 'br') { fixedX = cx - r0; fixedY = cy - r0; }
 
-        // Nowy promień tak, aby kursor przy „ciągniętym” rogu pokrywał brzeg koła:
         const dx0 = worldX - fixedX;
         const dy0 = worldY - fixedY;
         const side = Math.min(Math.abs(dx0), Math.abs(dy0));
         const newRadius = Math.max(5, side / 2);
 
-        // Przesuwamy środek koła tak, by “ciągnięty” brzeg zawsze podążał za wskaźnikiem:
         s.x = fixedX + Math.sign(dx0) * newRadius;
         s.y = fixedY + Math.sign(dy0) * newRadius;
         s.radius = newRadius;
 
-        // Obliczamy bounding‐box wraz z połową obramowania:
         const r2 = s.radius;
-        const left   = s.x - r2 - halfStroke;
-        const right  = s.x + r2 + halfStroke;
-        const top    = s.y - r2 - halfStroke;
-        const bottom = s.y + r2 + halfStroke;
+        const outerLeft   = s.x - r2 - halfStroke;
+        const outerRight  = s.x + r2 + halfStroke;
+        const outerTop    = s.y - r2 - halfStroke;
+        const outerBottom = s.y + r2 + halfStroke;
 
-        // Snapping: “łapiemy” którejś z tych zewnętrznych krawędzi
-        const dxSnap = getSnapDelta(left, right);
-        const dySnap = getSnapDelta(top, bottom);
+        const dxSnap = getSnapDelta(outerLeft, outerRight);
+        const dySnap = getSnapDelta(outerTop, outerBottom);
         s.x += dxSnap;
         s.y += dySnap;
 
       } else {
-        // —————— PROSTOKĄT / KWADRAT ——————
+        // ======= PROSTOKĄT / KWADRAT =======
         let left, right, top, bottom;
         const ox = original.x;
         const oy = original.y;
@@ -521,75 +535,77 @@ function onMouseMove(e) {
           bottom = oy + oh / 2 + dy0;
         }
 
-        // Rozszerzamy krawędzie o halfStroke, by uwzględnić lineWidth:
-        left   -= halfStroke;
-        right  += halfStroke;
-        top    -= halfStroke;
-        bottom += halfStroke;
+        let outerLeft   = left   - halfStroke;
+        let outerRight  = right  + halfStroke;
+        let outerTop    = top    - halfStroke;
+        let outerBottom = bottom + halfStroke;
 
-        // Snapujemy tylko te krawędzie, które faktycznie ruszamy:
         if (resizingCorner.includes('l')) {
-          left += snapOffset(left);
+          outerLeft += snapOffset(outerLeft);
         }
         if (resizingCorner.includes('r')) {
-          right += snapOffset(right);
+          outerRight += snapOffset(outerRight);
         }
         if (resizingCorner.includes('t')) {
-          top += snapOffset(top);
+          outerTop += snapOffset(outerTop);
         }
         if (resizingCorner.includes('b')) {
-          bottom += snapOffset(bottom);
+          outerBottom += snapOffset(outerBottom);
         }
 
-        // Na podstawie nowych, “snapniętych” krawędzi ustawiamy wymiary i środek:
-        s.width  = Math.max(10, right - left);
-        s.height = Math.max(10, bottom - top);
-        s.x = (left + right) / 2;
-        s.y = (top + bottom) / 2;
+        const innerLeft   = outerLeft   + halfStroke;
+        const innerRight  = outerRight  - halfStroke;
+        const innerTop    = outerTop    + halfStroke;
+        const innerBottom = outerBottom - halfStroke;
+
+        s.width  = Math.max(10, innerRight - innerLeft);
+        s.height = Math.max(10, innerBottom - innerTop);
+        s.x = (innerLeft + innerRight) / 2;
+        s.y = (innerTop  + innerBottom) / 2;
       }
 
       return updated;
     });
 
-    // Po każdej zmianie wielkości należy ponownie narysować całą scenę:
     drawAll();
     return;
   }
 
-  // 5️⃣ DRAG: jeśli przenosimy kształt
+  // 6. DRAG: jeśli przenosimy kształt
   if (draggedIndex != null) {
     setShowColorPicker(false);
+
     setShapes(prev => {
       const u = [...prev];
       let x = worldX - offset.x;
       let y = worldY - offset.y;
       const s = u[draggedIndex];
 
+      const halfStroke = 4 / scale;
+
       if (s instanceof Circle) {
         const r = s.radius;
-        // Łapiemy bounding‐box koła z obramowaniem:
-        const dxSnap = getSnapDelta(
-          x - r - halfStroke,
-          x + r + halfStroke
-        );
-        const dySnap = getSnapDelta(
-          y - r - halfStroke,
-          y + r + halfStroke
-        );
+        const outerLeft   = x - r - halfStroke;
+        const outerRight  = x + r + halfStroke;
+        const outerTop    = y - r - halfStroke;
+        const outerBottom = y + r + halfStroke;
+
+        const dxSnap = getSnapDelta(outerLeft, outerRight);
+        const dySnap = getSnapDelta(outerTop, outerBottom);
         x += dxSnap;
         y += dySnap;
+
       } else {
-        const halfW = s.width / 2;
+        const halfW = s.width  / 2;
         const halfH = s.height / 2;
-        // Łapiemy bounding‐box prostokąta z obramowaniem:
-        const dxSnap = getSnapDelta(
-          x - halfW - halfStroke,
-          x + halfW + halfStroke
-        );
-        const dySnap = getSnapDelta(
-          y - halfH - halfStroke,
-          y + halfH + halfStroke
-        );
+
+        const outerLeft   = x - halfW - halfStroke;
+        const outerRight  = x + halfW + halfStroke;
+        const outerTop    = y - halfH - halfStroke;
+        const outerBottom = y + halfH + halfStroke;
+
+        const dxSnap = getSnapDelta(outerLeft, outerRight);
+        const dySnap = getSnapDelta(outerTop, outerBottom);
         x += dxSnap;
         y += dySnap;
       }
@@ -603,9 +619,9 @@ function onMouseMove(e) {
     return;
   }
 
-  // 6️⃣ Gdy nic innego nie robimy, można tu ewentualnie ustawiać cursor="nwse-resize" itp.,
-  //    ale to już wyłącznie kosmetyka — snap działa powyżej.
+  // 7. Gdy nic innego nie robimy – (opcjonalnie można zmienić kursor)
 }
+
 
 
 
@@ -615,39 +631,51 @@ function onMouseMove(e) {
        MOUSE‑UP – kończy panning / drag / resize
        ------------------------------------------------------------------ */
    function onMouseUp() {
+  // zapamiętujemy, czy trwała operacja resize lub drag
   const wasResizing = isResizing;
-  const wasDragging = draggedIndex != null;// zapamiętujemy, czy trwał resize
+  const wasDragging = draggedIndex != null;
 
+  // zerujemy stany związane z przeciąganiem/powiększaniem
   setIsPanning(false);
   setDraggedIndex(null);
   setIsResizing(false);
   initialRef.current = null;
 
-  // Jeśli zakończyliśmy RESIZE i mamy zaznaczoną figurę — ponownie pokaż kolor picker
-    if ((wasResizing || wasDragging) && selectedIndex != null) {
-      setShowColorPicker(true);
-      const s = shapes[selectedIndex];
-      setPickerColor(s.color);
-      setPreviewColor(s.color);
+  // Jeżeli zakończyliśmy operację resize lub drag, to logujemy tylko tę jedną figurę:
+  if ((wasResizing || wasDragging) && selectedIndex != null) {
+    setShowColorPicker(true);
+    const s = shapes[selectedIndex];
+    setPickerColor(s.color);
+    setPreviewColor(s.color);
+
+    // Logujemy dane tylko tego kształtu:
+    if (s instanceof Circle) {
+      console.log(
+        `Object: Circle
+position: (${s.x.toFixed(0)}, ${s.y.toFixed(0)})
+radius: ${(s.radius + 4).toFixed(0)}
+color: ${s.color}
+border_color: ${s.borderColor}`
+      );
+    } else {
+      // rozpoznajemy, czy to prostokąt czy kwadrat
+      const isSquare = s.width === s.height;
+      const typeName = isSquare ? "Square" : "Rect";
+      // dla Rect/Square x,y to środek → przeliczamy na lewy-górny róg (+4 bo obramowanie 8px)
+      const left = (s.x - s.width / 2 - 4).toFixed(0);
+      const top  = (s.y - s.height / 2 - 4).toFixed(0);
+      console.log(
+        `Object: ${typeName}
+position: (${left}, ${top})
+width: ${(s.width + 8).toFixed(0)}
+height: ${(s.height + 8).toFixed(0)}
+color: ${s.color}
+border_color: ${s.borderColor}`
+      );
     }
-    // Za każdym razem, gdy „shapes” zostanie zmienione, wypisujemy informacje
-    // o wszystkich obecnych kształtach w konsoli.
-
-    shapes.forEach((s) => {
-      
-        if (s instanceof Circle) {
-        console.log(
-          `Object: Circle \nposition: (${s.x}, ${s.y}) \nradius: ${s.radius} \ncolor: ${s.color} \nborder_color: ${s.borderColor}`
-        );
-      } else if (s instanceof Rect) {
-        console.log(
-          `Object: Rect \nposition: (${s.x - s.width / 2 - 4}, ${s.y + s.height / 2 + 4}) \nwidth: ${s.width} \nheight: ${s.height} \ncolor: ${s.color} \nborder_color: ${s.borderColor}`
-        );
-      }
-      
-    });
-
+  }
 }
+
 
     /* ------------------------------------------------------------------
        Dodatkowe eventy (contextmenu, scroll‑zoom, dblclick, klawisze)
@@ -686,21 +714,20 @@ const onDoubleClick = e => {
 
     if (shape === 'circle') {
       n = new Circle(x, y, 46, "#e0e0e0", "#9e9e9e");
-      console.log(`Object: Circle \nposition: (${n.x}, ${n.y}) \nradius: ${n.radius} \ncolor: ${n.color} \nborder_color: ${n.borderColor}`);
+      console.log(`Object: Circle \nposition: (${n.x}, ${n.y}) \nradius: ${n.radius + 4} \ncolor: ${n.color} \nborder_color: ${n.borderColor}`);
     }
     if (shape === 'rect') {
       n = new Rect(x, y, 192, 92, "#e0e0e0", "#9e9e9e");
-      console.log(`Object: Rect \nposition: (${n.x - n.width / 2 - 4}, ${n.y + n.height + 4}) \nwidth: ${n.width} \nheight: ${n.height} \ncolor: ${n.color} \nborder_color: ${n.borderColor}`);
+      console.log(`Object: Rect \nposition: (${n.x - n.width / 2 - 4}, ${n.y + n.height + 4}) \nwidth: ${n.width + 8} \nheight: ${n.height + 8} \ncolor: ${n.color} \nborder_color: ${n.borderColor}`);
     }
     if (shape === 'square') {
       n = new Square(x, y, 92, "#e0e0e0", "#9e9e9e");
-      console.log(`Object: Square \nposition: (${n.x - n.width / 2 - 4}, ${n.y + n.height + 4}) \nwidth: ${n.width} \nheight: ${n.height} \ncolor: ${n.color} \nborder_color: ${n.borderColor}`);
+      console.log(`Object: Square \nposition: (${n.x - n.width / 2 - 4}, ${n.y + n.height + 4}) \nwidth: ${n.width + 8} \nheight: ${n.height + 8} \ncolor: ${n.color} \nborder_color: ${n.borderColor}`);
     }
 
     if (n) {
       setShapes(prev => {
         const u = [...prev, n];
-        setSelectedIndex(u.length - 1);
         return u;
       });
       // Nie logujemy tutaj – logika przeniesiona do useEffect, bo kształty mogą się
@@ -849,19 +876,28 @@ const onKeyDown = e => {
      JSX – przyciski + canvas
      --------------------------------------------------------------------- */
 // w górze App(), przed return:
+
+
 let panelStyle = {};
 if (showColorPicker && selectedIndex != null) {
   const s = shapes[selectedIndex];
   const screenX = s.x * scale + viewOffset.x;
-  const screenY = s.y * scale + viewOffset.y;
-  panelStyle = {
-    position: 'absolute',
-    left: `${screenX + -150}px`,
-    top:  `${screenY + -180}px`,
-  };
+  let objectTop;
+if (s instanceof Circle) {
+  objectTop = (s.y - s.radius) * scale + viewOffset.y;
+} else {
+  objectTop = (s.y - s.height / 2) * scale + viewOffset.y;
 }
 
-  return (
+ panelStyle = {
+  position: 'absolute',
+  left: `${screenX - 150}px`,
+  top:  `${objectTop - 100}px`, // ZAWSZE 40px nad górną krawędzią
+};
+
+}
+
+    return (
     <>
       <div className="shape-select">
         <button
@@ -872,9 +908,10 @@ if (showColorPicker && selectedIndex != null) {
           }}
           className={shape === 'square' ? 'active' : ''}
         >
-          <div id="square-btn"
-            className={shape === 'square' ? 'active-shape' : ''}>
-          </div>
+          <div
+            id="square-btn"
+            className={shape === 'square' ? 'active-shape' : ''}
+          />
         </button>
         <button
           onClick={() => {
@@ -884,21 +921,24 @@ if (showColorPicker && selectedIndex != null) {
           }}
           className={shape === 'rect' ? 'active' : ''}
         >
-          <div id="rect-btn"
-            className={shape === 'rect' ? 'active-shape' : ''}>
-          </div>
+          <div
+            id="rect-btn"
+            className={shape === 'rect' ? 'active-shape' : ''}
+          />
         </button>
-       <button onClick={() => {
-        setShape('circle');
-      setIsDeleting(false);
-            setSelectedIndex(null);}}
+        <button
+          onClick={() => {
+            setShape('circle');
+            setIsDeleting(false);
+            setSelectedIndex(null);
+          }}
+          className={shape === 'circle' ? 'active' : ''}
         >
-  <div
-    id="circle-btn"
-    className={shape === 'circle' ? 'active-shape' : ''}
-  />
-</button>
-
+          <div
+            id="circle-btn"
+            className={shape === 'circle' ? 'active-shape' : ''}
+          />
+        </button>
         <button
           id="delete-btn"
           onClick={() => {
@@ -906,58 +946,60 @@ if (showColorPicker && selectedIndex != null) {
             setShape('');
             setSelectedIndex(null);
           }}
-          className={isDeleting === true ? 'active-shape' : ''}
+          className={isDeleting ? 'active-shape' : ''}
         >
           🗑️
         </button>
+
+        
+        
       </div>
+
       <div className="canvas-container">
-    <canvas ref={canvasRef} />
+        <canvas ref={canvasRef} />
 
-    {showColorPicker && selectedIndex != null && (
-  <div className="color-panel" style={panelStyle}>
-    <h3>Wybierz kolor:</h3>
-      <div className="preset-colors">
-      <input
-        type="color"
-        value={pickerColor}
-        onChange={e => {
-          const c = e.target.value;
-          setPickerColor(e.target.value);
-          setPreviewColor(e.target.value);
-          setShapes(prev => {
-            const upd = [...prev];
-            const s = upd[selectedIndex];
-            s.color = c;
-            s.borderColor = darkenColor(c, 0.2);
-            return upd;
-          });
-        }}
-      />
-      {BASIC_COLORS.map(c => (
-        <button
-          key={c}
-          className={`swatch${pickerColor === c ? ' selected' : ''}`}
-          style={{ backgroundColor: c }}
-          onClick={() => {
-            setPickerColor(c);
-            setPreviewColor(c);
-            setShapes(prev => {
-              const upd = [...prev];
-              const s = upd[selectedIndex];
-              s.color = c;
-              s.borderColor = darkenColor(c, 0.2);
-              return upd;
-            });
-          }}
-        />
-      ))}
-    </div>
-  </div>
-)}
-
-  </div>
-
+        {showColorPicker && selectedIndex != null && (
+          <div className="color-panel" style={panelStyle}>
+            <h3>Wybierz kolor:</h3>
+            <div className="preset-colors">
+              <input
+                type="color"
+                value={pickerColor}
+                onChange={e => {
+                  const c = e.target.value;
+                  setPickerColor(c);
+                  setPreviewColor(c);
+                  setShapes(prev => {
+                    const upd = [...prev];
+                    const s = upd[selectedIndex];
+                    s.color = c;
+                    s.borderColor = darkenColor(c, 0.2);
+                    return upd;
+                  });
+                }}
+              />
+              {BASIC_COLORS.map(c => (
+                <button
+                  key={c}
+                  className={`swatch${pickerColor === c ? ' selected' : ''}`}
+                  style={{ backgroundColor: c }}
+                  onClick={() => {
+                    setPickerColor(c);
+                    setPreviewColor(c);
+                    setShapes(prev => {
+                      const upd = [...prev];
+                      const s = upd[selectedIndex];
+                      s.color = c;
+                      s.borderColor = darkenColor(c, 0.2);
+                      return upd;
+                    });
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </>
   );
 }
